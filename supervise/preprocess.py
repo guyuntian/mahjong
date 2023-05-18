@@ -7,7 +7,7 @@ actions = [[] for i in range(4)]
 matchid = -1
 
 l = []
-file = "data/Data_6*4*9_235"
+file = "data/Data_17(44_235"
 import os
 os.makedirs(file, exist_ok=True)
 

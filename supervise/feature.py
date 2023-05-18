@@ -305,10 +305,19 @@ class FeatureAgent(MahjongGBAgent):
         mask = np.zeros(self.ACT_SIZE)
         for a in self.valid:
             mask[a] = 1
+        my_obs = [1, self.seatWind+2, self.prevalentWind+6]
+        for tile in self.hand:
+            my_obs.append(self.OFFSET_TILE[tile] + 10)
+        while len(my_obs) < 17:
+            my_obs.append(0)
         return {
-            'observation': self.obs.reshape((self.OBS_SIZE, 4, 9)).copy(),
+            'observation': np.array(my_obs, dtype=np.int32),
             'action_mask': mask
         }
+        # return {
+        #     'observation': self.obs.reshape((self.OBS_SIZE, 4, 9)).copy(),
+        #     'action_mask': mask
+        # }
     
     def _hand_embedding_update(self):
         self.obs[self.OFFSET_OBS['HAND'] : ] = 0

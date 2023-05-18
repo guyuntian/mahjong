@@ -1,13 +1,13 @@
 from dataset import MahjongGBDataset
 from torch.utils.data import DataLoader
-from model import CNNModel
+from model import CNNModel, Encoder
 import torch.nn.functional as F
 import torch
 import os
 
 if __name__ == '__main__':
-    logdir = 'model/Data_6*4*9_235'
-    file = "data/Data_6*4*9_235"
+    logdir = 'model/Data_17(44_235'
+    file = "data/Data_17(44_235"
     os.makedirs(logdir + 'checkpoint', exist_ok=True)
     
     # Load dataset
@@ -19,7 +19,7 @@ if __name__ == '__main__':
     vloader = DataLoader(dataset = validateDataset, batch_size = batchSize, shuffle = False)
     
     # Load model
-    model = CNNModel().to('cuda')
+    model = Encoder().to('cuda')
     optimizer = torch.optim.Adam(model.parameters(), lr = 5e-4)
     
     # Train and validate
