@@ -125,7 +125,7 @@ class Block(nn.Module):
 
 class Encoder(nn.Module):
     """ GPT Language Model """
-    def __init__(self, d_model=256, vocab_size=44, drop=0.1, maxlen=20, nhead=4, num_layer=3):
+    def __init__(self, d_model=256, vocab_size=214, drop=0.1, maxlen=20, nhead=4, num_layer=3):
         super().__init__()
         self.transformer = nn.ModuleDict(dict(
             embedding = Embedding(d_model=d_model, vocab_size=vocab_size, maxlen=maxlen),
@@ -137,7 +137,7 @@ class Encoder(nn.Module):
 
         # report number of parameters (note we don't count the decoder parameters in lm_head)
         n_params = sum(p.numel() for p in self.transformer.parameters())
-        print("number of parameters: %.2fM" % (n_params/1e6,))
+        # print("number of parameters: %.2fM" % (n_params/1e6,))
         # if dist.get_rank() == 0:
         #     print("number of parameters: %.2fM" % (n_params/1e6,))
 

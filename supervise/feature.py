@@ -307,8 +307,10 @@ class FeatureAgent(MahjongGBAgent):
             mask[a] = 1
         my_obs = [1, self.seatWind+2, self.prevalentWind+6]
         for tile in self.hand:
-            my_obs.append(self.OFFSET_TILE[tile] + 10)
-        while len(my_obs) < 17:
+            my_obs.append(self.OFFSET_TILE[tile] + 10) # 10 + 34, 17
+        for i in self.TILE_LIST:
+            my_obs.append(self.OFFSET_TILE[i]*5 + 44 + self.shownTiles[i]) # 44 + 5 * 34 = 214, 17 + 34 = 51
+        while len(my_obs) < 51:
             my_obs.append(0)
         return {
             'observation': np.array(my_obs, dtype=np.int32),

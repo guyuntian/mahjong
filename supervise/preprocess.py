@@ -7,7 +7,7 @@ actions = [[] for i in range(4)]
 matchid = -1
 
 l = []
-file = "data/Data_17(44_235"
+file = "data/Data_51(214_235"
 import os
 os.makedirs(file, exist_ok=True)
 
@@ -28,8 +28,8 @@ def saveData():
     assert [len(x) for x in obs] == [len(x) for x in actions], 'obs actions not matching!'
     l.append(sum([len(x) for x in obs]))
     np.savez(f'{file}/%d.npz'%matchid
-        , obs = np.stack([x['observation'] for i in range(4) for x in obs[i]]).astype(np.int8)
-        , mask = np.stack([x['action_mask'] for i in range(4) for x in obs[i]]).astype(np.int8)
+        , obs = np.stack([x['observation'] for i in range(4) for x in obs[i]]).astype(np.int32)
+        , mask = np.stack([x['action_mask'] for i in range(4) for x in obs[i]]).astype(np.int32)
         , act = np.array([x for i in range(4) for x in actions[i]])
     )
     for x in obs: x.clear()

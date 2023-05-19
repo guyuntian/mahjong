@@ -1,3 +1,4 @@
 supervise/__pycache__/
 supervise/data/
 supervise/model/
+supervise/*.txt
