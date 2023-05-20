@@ -2,3 +2,8 @@ supervise/__pycache__/
 supervise/data/
 supervise/model/
 supervise/*.txt
+*.zip
+RL/finetune*
+RL/__pycache__/
+RL/*.txt
+RL/*.pkl

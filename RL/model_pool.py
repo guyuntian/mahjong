@@ -12,20 +12,23 @@ class ModelPoolServer:
         metadata_size = 1024
         self.shared_model_list = ShareableList([' ' * metadata_size] * capacity + [self.n], name = name)
         
-    def push(self, state_dict, metadata = {}):
+    def push(self, state_dict_model, state_dict_head, metadata = {}):
         n = self.n % self.capacity
         if self.model_list[n]:
             # FIFO: release shared memory of older model
             self.model_list[n]['memory'].unlink()
         
-        data = cPickle.dumps(state_dict) # model parameters serialized to bytes
-        memory = SharedMemory(create = True, size = len(data))
-        memory.buf[:] = data[:]
+        data_model = cPickle.dumps(state_dict_model) # model parameters serialized to bytes
+        data_head = cPickle.dumps(state_dict_head)
+        memory = SharedMemory(create = True, size = len(data_model) +  len(data_head))
+        memory.buf[:len(data_model)] = data_model[:]
+        memory.buf[len(data_model):] = data_head[:]
         # print('Created model', self.n, 'in shared memory', memory.name)
         
         metadata = metadata.copy()
         metadata['_addr'] = memory.name
         metadata['id'] = self.n
+        metadata['len'] = len(data_model)
         self.model_list[n] = metadata
         self.shared_model_list[n] = cPickle.dumps(metadata)
         self.n += 1
@@ -74,5 +77,5 @@ class ModelPoolClient:
         n = metadata['id']
         if n < self.n - self.capacity: return None
         memory = SharedMemory(name = metadata['_addr'])
-        state_dict = cPickle.loads(memory.buf)
-        return state_dict
+        state_dict_model, state_dict_head = cPickle.loads(memory.buf[:metadata['len']]), cPickle.loads(memory.buf[metadata['len']:])
+        return state_dict_model, state_dict_head

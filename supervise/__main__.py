@@ -17,42 +17,16 @@ from torch import nn
 import math
 from torch.nn import functional as F
 
-class CNNModel(nn.Module):
-
-    def __init__(self):
-        nn.Module.__init__(self)
-        self._tower = nn.Sequential(
-            nn.Conv2d(6, 64, 3, 1, 1, bias = False),
-            nn.ReLU(True),
-            nn.Conv2d(64, 64, 3, 1, 1, bias = False),
-            nn.ReLU(True),
-            nn.Conv2d(64, 64, 3, 1, 1, bias = False),
-            nn.ReLU(True),
-            nn.Flatten(),
-            nn.Linear(64 * 4 * 9, 256),
-            nn.ReLU(),
-            nn.Linear(256, 235)
-        )
-        
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
-                nn.init.kaiming_normal_(m.weight)
-
-    def forward(self, input_dict):
-        self.train(mode = input_dict.get("is_training", False))
-        obs = input_dict["obs"]["observation"].float()
-        action_logits = self._tower(obs)
-        action_mask = input_dict["obs"]["action_mask"].float()
-        inf_mask = torch.clamp(torch.log(action_mask), -1e38, 1e38)
-        return action_logits + inf_mask
-
-
 # import torch.distributed as dist
 
 class Embedding(nn.Module):
-    def __init__(self, d_model, vocab_size, maxlen):
+    def __init__(self, d_model, maxlen):
         super(Embedding, self).__init__()
-        self.tok_embed = nn.Embedding(vocab_size, d_model, padding_idx=0)  # token embedding
+        # self.tok_embed = nn.Embedding(vocab_size, d_model, padding_idx=0)  # token embedding
+        self.Type = nn.Embedding(11, d_model, padding_idx=0)
+        self.Color = nn.Embedding(11, d_model, padding_idx=0)
+        self.Num = nn.Embedding(10, d_model, padding_idx=0)
+        self.Duplicate = nn.Embedding(10, d_model, padding_idx=0)
         # pe = torch.zeros(maxlen, d_model).float()
         # pe.require_grad = False
         # position = torch.arange(0, maxlen).float().unsqueeze(1)
@@ -64,7 +38,7 @@ class Embedding(nn.Module):
         self.norm = nn.LayerNorm(d_model)
 
     def forward(self, x):
-        embedding = self.tok_embed(x)#  + self.pe[:, :x.size(1)]
+        embedding = self.Type(x[:, :, 0]) + self.Color(x[:, :, 1]) + self.Num(x[:, :, 2]) + self.Duplicate(x[:, :, 3])
         return self.norm(embedding)
 
 class NewGELU(nn.Module):
@@ -142,7 +116,7 @@ class Encoder(nn.Module):
     def __init__(self, d_model=256, vocab_size=214, drop=0.1, maxlen=20, nhead=4, num_layer=3):
         super().__init__()
         self.transformer = nn.ModuleDict(dict(
-            embedding = Embedding(d_model=d_model, vocab_size=vocab_size, maxlen=maxlen),
+            embedding = Embedding(d_model=d_model, maxlen=maxlen),
             drop = nn.Dropout(drop),
             h = nn.ModuleList([Block(d_model=d_model, nhead=nhead, drop=drop, maxlen=maxlen) for _ in range(num_layer)]),
             ln_f = nn.LayerNorm(d_model),
@@ -155,10 +129,58 @@ class Encoder(nn.Module):
         # if dist.get_rank() == 0:
         #     print("number of parameters: %.2fM" % (n_params/1e6,))
 
+        # type   cls:1 seat:2 prevalent:3 hand:4 chi:5 peng:6 gang:7 shown:8 cur:9 begin:10
+        # color  W:1 T:2 B:3 F1:4 F2:5 F3:6 F4:7 J1:8 J2:9 J3:10
+        # num    1-9
+        # duplicate: my_card: 1-4  shown: 5-9
+        transfer = [[0, 0, 0, 0], [1,0,0,0]]
+        for i in range(2, 4):
+            transfer = transfer + [[i, j, 0, 0]for j in range(4, 8)]
+
+        for i in range(1, 4):
+            for j in range(1, 10):
+                transfer = transfer + [[4, i, j, k]for k in range(1, 5)]
+        for i in range(4, 11):
+            transfer = transfer + [[4, i, 0, k]for k in range(1, 5)]
+
+        for i in range(1, 4):
+            for j in range(1, 10):
+                transfer = transfer + [[5, i, j, 1]]
+        for i in range(4, 11):
+            transfer = transfer + [[5, i, 0, 1]]
+
+        for i in range(1, 4):
+            for j in range(1, 10):
+                transfer = transfer + [[6, i, j, k] for k in range(1, 4)]
+        for i in range(4, 11):
+            transfer = transfer + [[6, i, 0, k] for k in range(1, 4)]
+
+        for i in range(1, 4):
+            for j in range(1, 10):
+                transfer = transfer + [[7, i, j, k] for k in range(1, 5)]
+        for i in range(4, 11):
+            transfer = transfer + [[7, i, 0, k] for k in range(1, 5)]
+
+        for i in range(1, 4):
+            for j in range(1, 10):
+                transfer = transfer + [[8, i, j, k] for k in range(5, 10)]
+        for i in range(4, 11):
+            transfer = transfer + [[8, i, 0, k] for k in range(5, 10)]
+
+        for i in range(1, 4):
+            for j in range(1, 10):
+                transfer = transfer + [[9, i, j, 0]]
+        for i in range(4, 11):
+            transfer = transfer + [[9, i, 0, 0]]
+        transfer.append([10, 0, 0, 0])
+        
+        self.register_buffer('dic', torch.tensor(transfer))
+
     def obs2logit(self, idx):
         b, t = idx.size()
         mask = (idx > 0).unsqueeze(1).repeat(1, idx.size(1), 1).unsqueeze(1)
         # forward the GPT model itself
+        idx = self.dic[idx]
         emb = self.transformer.embedding(idx)
         x = self.transformer.drop(emb)
         for block in self.transformer.h:
@@ -176,7 +198,14 @@ class Encoder(nn.Module):
         return action_logits + inf_mask
 
 
+from collections import defaultdict
+import numpy as np
 
+try:
+    from MahjongGB import MahjongFanCalculator
+except:
+    print('MahjongGB library required! Please visit https://github.com/ailab-pku/PyMahjongGB for more information.')
+    raise
 
 class FeatureAgent():
     
@@ -224,6 +253,7 @@ class FeatureAgent():
         self.isAboutKong = False
         self.obs = np.zeros((self.OBS_SIZE, 36))
         self.obs[self.OFFSET_OBS['SEAT_WIND']][self.OFFSET_TILE['F%d' % (self.seatWind + 1)]] = 1
+        self.curTile = -1
     
     '''
     Wind 0..3
@@ -475,12 +505,33 @@ class FeatureAgent():
         mask = np.zeros(self.ACT_SIZE)
         for a in self.valid:
             mask[a] = 1
-        my_obs = [1, self.seatWind+2, self.prevalentWind+6]
+        my_obs = [1, self.seatWind+2, self.prevalentWind+6] # 10, 3
+        d = defaultdict(int)
         for tile in self.hand:
-            my_obs.append(self.OFFSET_TILE[tile] + 10) # 10 + 34, 17
+            d[tile] += 1
+        for tile in d:
+            for i in range(d[tile]):
+                my_obs.append(self.OFFSET_TILE[tile]*4 + 10 +i) # 10 + 4 * 34 = 146
+        for pack in self.packs[0]:
+            if pack[0] == "CHI":
+                x = self.OFFSET_TILE[pack[1]]
+                for i in range(-1, 2):
+                    my_obs.append(146+x+i) # 146 + 34 = 180
+            if pack[0] == "PENG":
+                x = self.OFFSET_TILE[pack[1]]
+                for i in range(3):
+                    my_obs.append(180+3*x+i) # 180 + 34*3 = 282
+            if pack[0] == "GANG":
+                x = self.OFFSET_TILE[pack[1]]
+                for i in range(4):
+                    my_obs.append(180+4*x+i) # 282 + 34*4 = 418, 3 + 4*4 + 2 = 21
         for i in self.TILE_LIST:
-            my_obs.append(self.OFFSET_TILE[i]*5 + 44 + self.shownTiles[i]) # 44 + 5 * 34 = 214, 17 + 34 = 51
-        while len(my_obs) < 51:
+            my_obs.append(self.OFFSET_TILE[i]*5 + 418 + self.shownTiles[i]) # 418 + 5 * 34 = 588, 21 + 34 = 55
+        if self.curTile != -1:
+            my_obs.append(self.OFFSET_TILE[self.curTile] + 588) # 588 + 34 = 622, 56
+        else:
+            my_obs.append(622) # 623, 56
+        while len(my_obs) < 56:
             my_obs.append(0)
         return {
             'observation': np.array(my_obs, dtype=np.int32),
@@ -523,7 +574,6 @@ class FeatureAgent():
         return True
 
 
-
 def obs2response(model, obs):
     logits = model({'is_training': False, 'obs': {'observation': torch.from_numpy(np.expand_dims(obs['observation'], 0)), 'action_mask': torch.from_numpy(np.expand_dims(obs['action_mask'], 0))}})
     action = logits.detach().numpy().flatten().argmax()
@@ -531,8 +581,8 @@ def obs2response(model, obs):
     return response
 
 if __name__ == '__main__':
-    model = Encoder()
-    data_dir = '/data/14.pkl'
+    model = Encoder(num_layer=4)
+    data_dir = '/data/super.pkl'
     # data_dir = '7.pkl'
     model.load_state_dict(torch.load(data_dir, map_location = torch.device('cpu')))
     input() # 1

@@ -36,9 +36,13 @@ from torch.nn import functional as F
 # import torch.distributed as dist
 
 class Embedding(nn.Module):
-    def __init__(self, d_model, vocab_size, maxlen):
+    def __init__(self, d_model, maxlen):
         super(Embedding, self).__init__()
-        self.tok_embed = nn.Embedding(vocab_size, d_model, padding_idx=0)  # token embedding
+        # self.tok_embed = nn.Embedding(vocab_size, d_model, padding_idx=0)  # token embedding
+        self.Type = nn.Embedding(11, d_model, padding_idx=0)
+        self.Color = nn.Embedding(11, d_model, padding_idx=0)
+        self.Num = nn.Embedding(10, d_model, padding_idx=0)
+        self.Duplicate = nn.Embedding(10, d_model, padding_idx=0)
         # pe = torch.zeros(maxlen, d_model).float()
         # pe.require_grad = False
         # position = torch.arange(0, maxlen).float().unsqueeze(1)
@@ -50,7 +54,7 @@ class Embedding(nn.Module):
         self.norm = nn.LayerNorm(d_model)
 
     def forward(self, x):
-        embedding = self.tok_embed(x)#  + self.pe[:, :x.size(1)]
+        embedding = self.Type(x[:, :, 0]) + self.Color(x[:, :, 1]) + self.Num(x[:, :, 2]) + self.Duplicate(x[:, :, 3])
         return self.norm(embedding)
 
 class NewGELU(nn.Module):
@@ -128,7 +132,7 @@ class Encoder(nn.Module):
     def __init__(self, d_model=256, vocab_size=214, drop=0.1, maxlen=20, nhead=4, num_layer=3):
         super().__init__()
         self.transformer = nn.ModuleDict(dict(
-            embedding = Embedding(d_model=d_model, vocab_size=vocab_size, maxlen=maxlen),
+            embedding = Embedding(d_model=d_model, maxlen=maxlen),
             drop = nn.Dropout(drop),
             h = nn.ModuleList([Block(d_model=d_model, nhead=nhead, drop=drop, maxlen=maxlen) for _ in range(num_layer)]),
             ln_f = nn.LayerNorm(d_model),
@@ -141,10 +145,58 @@ class Encoder(nn.Module):
         # if dist.get_rank() == 0:
         #     print("number of parameters: %.2fM" % (n_params/1e6,))
 
+        # type   cls:1 seat:2 prevalent:3 hand:4 chi:5 peng:6 gang:7 shown:8 cur:9 begin:10
+        # color  W:1 T:2 B:3 F1:4 F2:5 F3:6 F4:7 J1:8 J2:9 J3:10
+        # num    1-9
+        # duplicate: my_card: 1-4  shown: 5-9
+        transfer = [[0, 0, 0, 0], [1,0,0,0]]
+        for i in range(2, 4):
+            transfer = transfer + [[i, j, 0, 0]for j in range(4, 8)]
+
+        for i in range(1, 4):
+            for j in range(1, 10):
+                transfer = transfer + [[4, i, j, k]for k in range(1, 5)]
+        for i in range(4, 11):
+            transfer = transfer + [[4, i, 0, k]for k in range(1, 5)]
+
+        for i in range(1, 4):
+            for j in range(1, 10):
+                transfer = transfer + [[5, i, j, 1]]
+        for i in range(4, 11):
+            transfer = transfer + [[5, i, 0, 1]]
+
+        for i in range(1, 4):
+            for j in range(1, 10):
+                transfer = transfer + [[6, i, j, k] for k in range(1, 4)]
+        for i in range(4, 11):
+            transfer = transfer + [[6, i, 0, k] for k in range(1, 4)]
+
+        for i in range(1, 4):
+            for j in range(1, 10):
+                transfer = transfer + [[7, i, j, k] for k in range(1, 5)]
+        for i in range(4, 11):
+            transfer = transfer + [[7, i, 0, k] for k in range(1, 5)]
+
+        for i in range(1, 4):
+            for j in range(1, 10):
+                transfer = transfer + [[8, i, j, k] for k in range(5, 10)]
+        for i in range(4, 11):
+            transfer = transfer + [[8, i, 0, k] for k in range(5, 10)]
+
+        for i in range(1, 4):
+            for j in range(1, 10):
+                transfer = transfer + [[9, i, j, 0]]
+        for i in range(4, 11):
+            transfer = transfer + [[9, i, 0, 0]]
+        transfer.append([10, 0, 0, 0])
+        
+        self.register_buffer('dic', torch.tensor(transfer))
+
     def obs2logit(self, idx):
         b, t = idx.size()
         mask = (idx > 0).unsqueeze(1).repeat(1, idx.size(1), 1).unsqueeze(1)
         # forward the GPT model itself
+        idx = self.dic[idx]
         emb = self.transformer.embedding(idx)
         x = self.transformer.drop(emb)
         for block in self.transformer.h:

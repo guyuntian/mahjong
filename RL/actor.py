@@ -6,7 +6,7 @@ from replay_buffer import ReplayBuffer
 from model_pool import ModelPoolClient
 from env import MahjongGBEnv
 from feature import FeatureAgent
-from model import CNNModel
+from model import Encoder, Head
 
 class Actor(Process):
     
@@ -23,23 +23,26 @@ class Actor(Process):
         model_pool = ModelPoolClient(self.config['model_pool_name'])
         
         # create network model
-        model = CNNModel()
+        model = Encoder()
+        head = Head()
         
         # load initial model
         version = model_pool.get_latest_model()
-        state_dict = model_pool.load_model(version)
-        model.load_state_dict(state_dict)
+        state_dict_model, state_dict_head = model_pool.load_model(version)
+        model.load_state_dict(state_dict_model)
+        head.load_state_dict(state_dict_head)
         
         # collect data
         env = MahjongGBEnv(config = {'agent_clz': FeatureAgent})
-        policies = {player : model for player in env.agent_names} # all four players use the latest model
+        # policies = {player : model for player in env.agent_names} # all four players use the latest model
         
         for episode in range(self.config['episodes_per_actor']):
             # update model
             latest = model_pool.get_latest_model()
             if latest['id'] > version['id']:
-                state_dict = model_pool.load_model(latest)
-                model.load_state_dict(state_dict)
+                state_dict_model, state_dict_head = model_pool.load_model(latest)
+                model.load_state_dict(state_dict_model)
+                head.load_state_dict(state_dict_head)
                 version = latest
             
             # run one episode and collect data
@@ -67,7 +70,7 @@ class Actor(Process):
                     state['action_mask'] = torch.tensor(state['action_mask'], dtype = torch.float).unsqueeze(0)
                     model.train(False) # Batch Norm inference mode
                     with torch.no_grad():
-                        logits, value = model(state)
+                        logits, value = model(state, head)
                         action_dist = torch.distributions.Categorical(logits = logits)
                         action = action_dist.sample().item()
                         value = value.item()
@@ -78,9 +81,9 @@ class Actor(Process):
                 # interact with env
                 next_obs, rewards, done = env.step(actions)
                 for agent_name in rewards:
-                    episode_data[agent_name]['reward'].append(rewards[agent_name])
+                    episode_data[agent_name]['reward'].append(rewards[agent_name] / 100)
                 obs = next_obs
-            print(self.name, 'Episode', episode, 'Model', latest['id'], 'Reward', rewards)
+            # print(self.name, 'Episode', episode, 'Model', latest['id'], 'Reward', rewards)
             
             # postprocessing episode data for each agent
             for agent_name, agent_data in episode_data.items():

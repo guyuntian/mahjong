@@ -5,15 +5,30 @@ import torch.nn.functional as F
 import torch
 import os
 from transformers import get_scheduler, set_seed
+import argparse
+
+parser = argparse.ArgumentParser(description='train')
+
+parser.add_argument('--batchsize', type=int, default=256)
+parser.add_argument('--lr', type=float, default=1e-4)
+parser.add_argument('--layer', type=int, default=3)
+parser.add_argument('--logdir', type=str, default='model/Data')
+parser.add_argument('--file', type=str, default='data/Data')
+parser.add_argument('--d_model', type=int, default=256)
+
+
+args = parser.parse_args()
 
 splitRatio = 0.9
-batchSize = 256
-lr = 5e-5
-epoch = 15
+batchSize = args.batchsize
+lr = args.lr
+epoch = 20
 warmup = 2
-logdir = 'model/Data_51(214_235'
-file = "data/Data_51(214_235"
+logdir = args.logdir
+file = args.file
 vocab_size = 214
+num_layer = args.layer
+d_model = args.d_model
 
 def set_optimizer_scheduler(model):
     no_decay = ["bias", "LayerNorm.weight"]
@@ -36,7 +51,7 @@ def set_optimizer_scheduler(model):
 
 if __name__ == '__main__':
     set_seed(2023)
-    os.makedirs(logdir + 'checkpoint', exist_ok=True)
+    os.makedirs(logdir, exist_ok=True)
     device = 'cuda'
     # Load dataset
     trainDataset = MahjongGBDataset(file, 0, splitRatio, True)
@@ -45,13 +60,13 @@ if __name__ == '__main__':
     vloader = DataLoader(dataset = validateDataset, batch_size = batchSize, shuffle = False)
     
     # Load model
-    model = Encoder(vocab_size=vocab_size).to(device)
+    model = Encoder(d_model=d_model, vocab_size=214, drop=0.1, maxlen=20, nhead=4, num_layer=num_layer).to(device)
     optimizer, scheduler = set_optimizer_scheduler(model)
     
     # Train and validate
     for e in range(epoch):
         print('Epoch', e)
-        torch.save(model.state_dict(), logdir + 'checkpoint/%d.pkl' % e)
+        torch.save(model.state_dict(), logdir + '/%d.pkl' % e)
         for i, d in enumerate(loader):
             input_dict = {'is_training': True, 'obs': {'observation': d[0].to(device), 'action_mask': d[1].to(device)}}
             logits = model(input_dict)
@@ -62,7 +77,22 @@ if __name__ == '__main__':
             loss.backward()
             optimizer.step()
         scheduler.step()
+
         print('Run validation:')
+        correct = 0
+        Sum = 0
+        for i, d in enumerate(loader):
+            input_dict = {'is_training': False, 'obs': {'observation': d[0].cuda(), 'action_mask': d[1].cuda()}}
+            with torch.no_grad():
+                logits = model(input_dict)
+                pred = logits.argmax(dim = 1)
+                correct += torch.eq(pred, d[2].cuda()).sum().item()
+            Sum += input_dict["obs"]["observation"].shape[0]
+            if Sum > len(trainDataset) / 10:
+                break
+        acc = correct / Sum
+        print('Epoch', e + 1, 'Train acc:', acc)
+
         correct = 0
         for i, d in enumerate(vloader):
             input_dict = {'is_training': False, 'obs': {'observation': d[0].cuda(), 'action_mask': d[1].cuda()}}

@@ -54,6 +54,7 @@ class FeatureAgent(MahjongGBAgent):
         self.isAboutKong = False
         self.obs = np.zeros((self.OBS_SIZE, 36))
         self.obs[self.OFFSET_OBS['SEAT_WIND']][self.OFFSET_TILE['F%d' % (self.seatWind + 1)]] = 1
+        self.curTile = -1
     
     '''
     Wind 0..3
@@ -305,12 +306,33 @@ class FeatureAgent(MahjongGBAgent):
         mask = np.zeros(self.ACT_SIZE)
         for a in self.valid:
             mask[a] = 1
-        my_obs = [1, self.seatWind+2, self.prevalentWind+6]
+        my_obs = [1, self.seatWind+2, self.prevalentWind+6] # 10, 3
+        d = defaultdict(int)
         for tile in self.hand:
-            my_obs.append(self.OFFSET_TILE[tile] + 10) # 10 + 34, 17
+            d[tile] += 1
+        for tile in d:
+            for i in range(d[tile]):
+                my_obs.append(self.OFFSET_TILE[tile]*4 + 10 +i) # 10 + 4 * 34 = 146
+        for pack in self.packs[0]:
+            if pack[0] == "CHI":
+                x = self.OFFSET_TILE[pack[1]]
+                for i in range(-1, 2):
+                    my_obs.append(146+x+i) # 146 + 34 = 180
+            if pack[0] == "PENG":
+                x = self.OFFSET_TILE[pack[1]]
+                for i in range(3):
+                    my_obs.append(180+3*x+i) # 180 + 34*3 = 282
+            if pack[0] == "GANG":
+                x = self.OFFSET_TILE[pack[1]]
+                for i in range(4):
+                    my_obs.append(180+4*x+i) # 282 + 34*4 = 418, 3 + 4*4 + 2 = 21
         for i in self.TILE_LIST:
-            my_obs.append(self.OFFSET_TILE[i]*5 + 44 + self.shownTiles[i]) # 44 + 5 * 34 = 214, 17 + 34 = 51
-        while len(my_obs) < 51:
+            my_obs.append(self.OFFSET_TILE[i]*5 + 418 + self.shownTiles[i]) # 418 + 5 * 34 = 588, 21 + 34 = 55
+        if self.curTile != -1:
+            my_obs.append(self.OFFSET_TILE[self.curTile] + 588) # 588 + 34 = 622, 56
+        else:
+            my_obs.append(622) # 623, 56
+        while len(my_obs) < 56:
             my_obs.append(0)
         return {
             'observation': np.array(my_obs, dtype=np.int32),

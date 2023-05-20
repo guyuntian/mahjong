@@ -7,7 +7,7 @@ actions = [[] for i in range(4)]
 matchid = -1
 
 l = []
-file = "data/Data_51(214_235"
+file = "/data171_hdd0/gyt/Data622_56"
 import os
 os.makedirs(file, exist_ok=True)
 
@@ -45,6 +45,8 @@ with open('data/data.txt', encoding='UTF-8') as f:
         if t[0] == 'Match':
             agents = [FeatureAgent(i) for i in range(4)]
             matchid += 1
+            if matchid % 1000 == 0:
+                print(matchid)
         elif t[0] == 'Wind':
             for agent in agents:
                 agent.request2obs(line)
